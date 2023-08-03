@@ -1,7 +1,11 @@
 <script lang="ts">
   import { JSONEditor } from 'svelte-jsoneditor';
+  import type { Content, OnChangeStatus, JSONContent } from 'svelte-jsoneditor';
+
   let inputString = 'http://app.productive.io.localhost/1-development-d-o-o/insights/draft?filter=eyJyZXBvcnRMYXlvdXRJZCI6IjIiLCJjaGFydFR5cGVJZCI6IjEiLCJidWRnZXRfc3RhdHVzIjp7ImVxIjoiMSJ9LCJkZWFsX3R5cGUiOnsiZXEiOiIyIn19&templateData=eyJmaWx0ZXJhYmxlQ29sbGVjdGlvbiI6InNlcnZpY2VzIiwibmFtZSI6Ik5ldyBTZXJ2aWNlcyBpbnNpZ2h0IiwicGFyYW1zIjp7ImJ1ZGdldFN0YXR1cyI6IjEifX0%3D&trigger=new-insight';
-  let copyCopy = 'Copy result to clipboard';
+  let copyCopy = 'Copy';
+  let url: URL | undefined = undefined;
+  let content: Content = { json: {} };
 
   const base64test = /^([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$/;
 
@@ -21,55 +25,74 @@
     }
   };
 
-  const handleDecodedString = (dValue: string) => {
-    console.log(dValue);
+  const isJSONContent = (obj: Content): obj is JSONContent => {
+    return 'json' in obj;
+  };
+
+  const decodeBase64 = (encodedValue: string) => {
     try {
-      return isStringBase64Encoded(dValue) && isStringBase64(dValue) ? JSON.parse(atob(dValue)) : dValue;
+      return isStringBase64Encoded(encodedValue) && isStringBase64(encodedValue) ? atob(encodedValue) : encodedValue;
     } catch (error) {
-      return dValue;
+      return encodedValue;
     }
   };
 
-  const getSearchParams = (inputString: string) => {
+  const getSearchParams = () => {
     try {
-      const url = new URL(inputString);
+      url = new URL(inputString);
       const params = Array.from(url.searchParams.entries()) ?? [];
 
       const decodedParams = params.map(([key, value]) => {
-        return isStringURLEncoded(value) ? [key, handleDecodedString(decodeURIComponent(value))] : [key, handleDecodedString(value)];
+        const decodedValue = isStringURLEncoded(value) ? decodeBase64(decodeURIComponent(value)) : decodeBase64(value);
+
+        try {
+          return [key, JSON.parse(decodedValue)];
+        } catch (error) {
+          return [key, decodedValue];
+        }
       });
 
       return decodedParams;
     } catch (error) {
+      url = undefined;
       return [];
     }
   };
 
-  const getConstructedUrl = () => {
+  const setContent = () => {
     try {
-      const url = new URL(inputString);
-      searchParams.forEach(([key, value]) => {
-        const oldValue = url.searchParams.get(key);
-        const needUrlEncode = oldValue && isStringURLEncoded(oldValue);
-        if (needUrlEncode) {
-          const oldValueDecoded = decodeURIComponent(oldValue);
-          const needbase64Encode = isStringBase64Encoded(oldValueDecoded) && isStringBase64(oldValueDecoded);
-          if (needbase64Encode) {
-            url.searchParams.set(key, encodeURIComponent(btoa(value)));
-          } else {
-            url.searchParams.set(key, encodeURIComponent(value));
-          }
-        } else {
-          const needbase64Encode = oldValue && isStringBase64Encoded(oldValue) && isStringBase64(oldValue);
-          if (needbase64Encode) {
-            url.searchParams.set(key, btoa(value));
-          } else {
-            url.searchParams.set(key, value);
-          }
-        }
-      });
+      content = { json: Object.fromEntries(getSearchParams()) };
+    } catch (error) {
+      content = { json: {} };
+    }
+  };
 
-      return url.href;
+  const updateSearchParams = (content: Content) => {
+    try {
+      const searchParams = url?.searchParams;
+      if (!searchParams) {
+        return;
+      }
+
+      let changes = isJSONContent(content) ? content.json : JSON.parse(content.text);
+
+      for (const [key, value] of searchParams) {
+        const newValue = changes[key];
+
+        if (newValue === undefined) {
+          searchParams.delete(key);
+          continue;
+        }
+
+        if (typeof newValue === 'object') {
+          searchParams.set(key, encodeURIComponent(btoa(JSON.stringify(newValue))));
+          continue;
+        }
+
+        searchParams.set(key, encodeURIComponent(newValue));
+      }
+
+      inputString = url ? url.href : '';
     } catch (error) {
       return '';
     }
@@ -79,14 +102,22 @@
     copyCopy = 'Copied!';
     this.blur();
     setTimeout(() => {
-      copyCopy = 'Copy result to clipboard';
+      copyCopy = 'Copy';
     }, 1000);
-    navigator?.clipboard.writeText(getConstructedUrl());
+    navigator?.clipboard.writeText(inputString);
   }
 
-  $: searchParams = inputString ? getSearchParams(inputString) : [];
-  $: constructedUrl = searchParams.length ? getConstructedUrl() : '';
-  $: content = searchParams.length ? { json: Object.fromEntries(searchParams) } : { json: {} };
+  function handleInput(this: HTMLInputElement) {
+    inputString = this.value;
+    setContent();
+  }
+
+  function handleEdit(updatedContent: Content, previousContent: Content, { contentErrors, patchResult }: OnChangeStatus) {
+    content = updatedContent;
+    updateSearchParams(updatedContent);
+  }
+
+  setContent();
 </script>
 
 <nav class="container-fluid">
@@ -96,10 +127,6 @@
 </nav>
 
 <main class="container">
-  <article class="json-editor jse-theme-dark">
-    <JSONEditor bind:content />
-  </article>
-
   <article class="grid">
     <div>
       <hgroup>
@@ -108,36 +135,14 @@
       </hgroup>
 
       <div class="grid inline-input">
-        <input type="text" bind:value={inputString}>
-        <button>Probe</button>
+        <input type="text" value={inputString} on:change={handleInput}>
+        <button on:click={copyToClipboard}>{copyCopy}</button>
       </div>
     </div>
   </article>
 
-  <article>
-    <hgroup>
-      <h1>searchParams</h1>
-      <h2>Here's what we got</h2>
-    </hgroup>
-
-    {#each searchParams as [key, value], i}
-      <label for={`qp${i + 1}`}>
-        {key}
-        <input type="text" id={`qp${i + 1}`} bind:value={value}>
-      </label>
-    {/each}
-  </article>
-
-  <article>
-    <h1>Results</h1>
-
-    <h6>input</h6>
-    <pre class="url-block">{inputString}</pre>
-
-    <h6>result</h6>
-    <pre class="url-block">{constructedUrl}</pre>
-
-    <button on:click={copyToClipboard}>{copyCopy}</button>
+  <article class="json-editor jse-theme-dark">
+    <JSONEditor {content} onChange="{handleEdit}" />
   </article>
 </main>
 
@@ -164,10 +169,6 @@
 
   .inline-input > input { grid-area: 1 / 1 / 2 / 5; }
   .inline-input > button { grid-area: 1 / 5 / 2 / 6; }
-
-  .url-block {
-    white-space: pre-line;
-  }
 
   .json-editor {
     --jse-background-color: var(--background-color);
