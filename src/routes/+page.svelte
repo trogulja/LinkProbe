@@ -2,7 +2,7 @@
   import { JSONEditor } from 'svelte-jsoneditor';
   import type { Content, OnChangeStatus, JSONContent } from 'svelte-jsoneditor';
 
-  let inputString = 'http://app.productive.io.localhost/1-development-d-o-o/insights/draft?filter=eyJyZXBvcnRMYXlvdXRJZCI6IjIiLCJjaGFydFR5cGVJZCI6IjEiLCJidWRnZXRfc3RhdHVzIjp7ImVxIjoiMSJ9LCJkZWFsX3R5cGUiOnsiZXEiOiIyIn19&templateData=eyJmaWx0ZXJhYmxlQ29sbGVjdGlvbiI6InNlcnZpY2VzIiwibmFtZSI6Ik5ldyBTZXJ2aWNlcyBpbnNpZ2h0IiwicGFyYW1zIjp7ImJ1ZGdldFN0YXR1cyI6IjEifX0%3D&trigger=new-insight';
+  let inputString = '';
   let copyCopy = 'Copy';
   let url: URL | undefined = undefined;
   let content: Content = { json: {} };
